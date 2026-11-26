@@ -64,7 +64,7 @@
         <li>❤️ <b>3 nyawa tiap fighter.</b> Last fighter standing menang.</li>
       </ul>
     </div>
-    <p class="foot">Base Mini App · Android-ready · No transactions, no signing — your wallet is just your identity.</p>
+    <p class="foot">Base Account · Android-ready · No transactions, no signing — your wallet is just your identity.</p>
   </section>
 
   <!-- Login modal (pop-up pilihan login, muncul di atas splash/dashboard) -->
@@ -169,7 +169,10 @@
   </section>
 </main>
 
+<script src="save-config.js"></script>
 <script src="game.js"></script>
+<!-- Base Account SDK (CDN, pinned 2.6.0) — exposes window.createBaseAccountSDK for wallet.js -->
+<script src="https://unpkg.com/@base-org/account@2.6.0/dist/base-account.min.js"></script>
 <script src="wallet.js"></script>
 </body>
 </html>
