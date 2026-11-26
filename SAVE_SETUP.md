@@ -13,7 +13,8 @@ ke device mana pun. Guest/email tetap lokal saja — cloud cuma untuk wallet.
    - **Project URL** → `supabaseUrl`
    - **anon public key** → `supabaseAnonKey`
    (JANGAN pakai `service_role` key — itu rahasia, jangan pernah taruh di file game.)
-4. **SQL Editor** → **New query** → jalankan SQL di bawah (sekali saja):
+4. **SQL Editor** → **New query** → jalankan SQL di bawah (boleh di-run berkali-kali,
+   aman — policy di-drop dulu sebelum dibuat ulang):
 
 ```sql
 create table if not exists player_saves (
@@ -32,6 +33,12 @@ alter table player_saves enable row level security;
 -- hanya ke baris yang wallet_address-nya = address si pemain.
 -- Catatan: anon key tidak membuktikan kepemilikan address (tanpa SIWE),
 -- jadi ini mencegah tabrakan acak, bukan spoofing yang disengaja.
+-- DROP dulu supaya script bisa di-run ulang tanpa error 42710
+-- ("policy already exists").
+drop policy if exists "read all saves" on player_saves;
+drop policy if exists "upsert own save" on player_saves;
+drop policy if exists "update own save" on player_saves;
+
 create policy "read all saves" on player_saves
   for select using (true);
 
@@ -40,6 +47,12 @@ create policy "upsert own save" on player_saves
 
 create policy "update own save" on player_saves
   for update using (true);
+
+-- WAJIB: policy RLS saja tidak cukup. Role anon (yang dipakai publishable key)
+-- juga butuh hak akses tabel, kalau tidak semua request ditolak 401 code 42501
+-- ("permission denied for table player_saves").
+grant select, insert, update, delete on public.player_saves to anon;
+grant select, insert, update, delete on public.player_saves to authenticated;
 ```
 
 5. Isi `save-config.js` dengan URL + anon key, lalu deploy ulang (push ke GitHub —
