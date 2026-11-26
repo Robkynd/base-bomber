@@ -25,9 +25,10 @@ framework. Built for the web first, with a Base on-chain roadmap.
   fuse, faster monsters, storm strike every 6s) guarantees a winner.
 - **Splash screen** — full-screen retro pixel-art (boy + bomb chased by
   a hedgehog), one Play button inside the image.
-- **Login pop-up** — Play opens a modal: Connect Wallet (Base stub),
+- **Login pop-up** — Play opens a modal: Connect Wallet (Base Account),
   Login with Email (local identity, no OTP yet), or Guest. Login
-  persists in localStorage; best stats too.
+  persists in localStorage; best stats too (per-identity save, cloud sync
+  optional via Supabase — see `SAVE_SETUP.md`).
 - **Dashboard / Leaderboard / Profile** — SPA views. Leaderboard is a
   placeholder (on-chain leaderboard is on the roadmap).
 
@@ -38,7 +39,8 @@ framework. Built for the web first, with a Base on-chain roadmap.
 | `index.html` | SPA shell: splash, dashboard, game, leaderboard, profile + login modal |
 | `style.css` | Mobile-first, portrait-friendly styling |
 | `game.js` | Engine: map gen, fighters/AI, monsters, bombs, sudden death, login state |
-| `wallet.js` | Connect Wallet stub (Base) — read-only, no tx, no signing |
+| `wallet.js` | Connect Wallet via Base Account SDK (`@base-org/account` 2.6.0, CDN) — identity only, no tx, no signing; falls back to injected `window.ethereum` |
+| `save-config.js` | Cloud-save config (Supabase URL + anon key; empty = local-only) |
 | `build-standalone.js` | Builds `basebomber-standalone.html` (single-file bundle, images inlined) |
 | `capacitor.config.json` | `com.basebomber.game` / `Base Bomber`, `webDir: "."` |
 | `package.json` | `@capacitor/core` + `@capacitor/cli` (devDeps) |
@@ -77,19 +79,26 @@ fighter. Pause with **P** / **Esc**. Start a match with **Enter**.
 - Sudden death (from 90s): blast range +1, fuse 1.2s, monsters ×1.5
   speed, and a storm strike hits a random living fighter every 6s.
 
-## Wallet
+## Wallet & save
 
-Connect Wallet uses `window.ethereum` if present: `eth_requestAccounts`
-+ `eth_chainId` only. It shows a truncated address + chain id and marks
-Base (chain 8453). Email login stores the address locally (no OTP yet).
-No transactions, no signing, no chain RPC calls. Without a wallet it
-shows a friendly message and the game still plays as guest.
+Connect Wallet uses the **Base Account SDK** (`@base-org/account` 2.6.0,
+CDN): `eth_requestAccounts` + auto-switch to Base (chain 8453). If the SDK
+can't load, it falls back to an injected `window.ethereum` wallet. The
+wallet is the player's identity — no transactions, no signing. Email login
+stores the address locally (no OTP yet). Without a wallet the game still
+plays as guest.
+
+**Save:** progress (tokens, score, level, matches, strategy) is stored
+per identity in localStorage (`bombchain.save.wallet:<address>` /
+`email:<email>` / `guest`). With a Supabase project configured in
+`save-config.js` (see `SAVE_SETUP.md`), wallet saves also sync to the cloud
+(table `player_saves`) so progress follows the wallet across devices.
 
 ## Roadmap (grant plan — see `grant-plan.md`)
 
 1. Public HTTPS hosting (this repo via GitHub Pages) + Base Dashboard
    registration.
-2. Real wallet (Base Account / wagmi).
+2. Real wallet (Base Account) + save system. ✅ Done (26 Nov 2026).
 3. On-chain features: leaderboard contract and/or fighter NFT mint.
 4. Builder Codes + polish.
 5. Apply: Base Batches / Builder Grant.
@@ -107,7 +116,7 @@ shows a friendly message and the game still plays as guest.
 ## Tests
 
 ```bash
-node tests/nav-smoke-test.js   # 54 checks: views, splash, login modal, wallet/email/guest
+node tests/nav-smoke-test.js   # 56 checks: views, splash, login modal, wallet/email/guest, save system
 node tests/pacing-test.js      # 5 simulated matches must finish with a winner
 ```
 
