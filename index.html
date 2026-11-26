@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1a">
+<title>Base Bomber — Web3 Bomberman on Base</title>
+<meta name="description" content="Base Bomber: a Bomberman-like web3 game. Place bombs, blast blocks, beat the bots.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="brand">💣 <span>Base Bomber</span></div>
+    <button id="walletBtnTop" class="btn wallet-btn" type="button">Connect Wallet</button>
+  </div>
+  <nav class="mainnav" aria-label="Menu utama">
+    <a href="#" class="nav-link active" data-view="dashboard">Dashboard</a>
+    <a href="#" class="nav-link" data-view="game">Play</a>
+    <a href="#" class="nav-link" data-view="leaderboard">Leaderboard</a>
+    <a href="#" class="nav-link" data-view="profile">Profile</a>
+  </nav>
+</header>
+
+<main>
+  <!-- Splash (tampilan pertama saat buka) -->
+  <section id="view-splash" class="view splash" aria-label="Splash">
+    <img class="splash-img" src="splash-hero.webp" alt="Karakter dikejar landak sambil bawa bom" onerror="this.style.display='none'">
+    <button id="splashPlayBtn" class="btn btn-primary btn-big splash-play" type="button">▶ Play</button>
+  </section>
+
+  <!-- Dashboard (tampilan pertama) -->
+  <section id="view-dashboard" class="view" hidden aria-label="Dashboard">
+    <h1>💣 Base Bomber</h1>
+    <p class="tagline">Bomberman on Base. Place bombs. Blast blocks. Beat the bots.</p>
+    <img class="hero-img" src="concept.webp" alt="Base Bomber game concept" onerror="this.style.display='none'">
+
+    <div class="card player-card">
+      <div class="player-row">
+        <div>
+          <div class="player-label">Pemain</div>
+          <div id="dashPlayerTitle" class="player-title">Belum login</div>
+          <p id="dashPlayerStats" class="player-stats">Login dengan wallet Base untuk melacak skor &amp; tokenmu.</p>
+        </div>
+        <button id="dashLoginBtn" class="btn btn-primary" type="button">Log In</button>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <button id="playBtn" class="btn btn-primary btn-big" type="button">▶ Play</button>
+      <div class="quick-row">
+        <button id="dashBoardBtn" class="btn" type="button">🏆 Leaderboard</button>
+        <button id="dashProfileBtn" class="btn" type="button">👤 Profile</button>
+      </div>
+    </div>
+
+    <div class="howto">
+      <h2>Cara Main (singkat)</h2>
+      <ul>
+        <li>🤖 <b>Auto-battler:</b> fighter jalan + pasang bom sendiri — kamu atur strateginya</li>
+        <li>💣 <b>Bom:</b> fuse ~2s, blast bentuk + (chain reaction kalau kena bom lain)</li>
+        <li>🧱 <b>Blast bricks</b> untuk cari 💣 Token (1000–2000/stage) &amp; 👻 Tembus Tembok (12 detik)</li>
+        <li>❤️ <b>3 nyawa tiap fighter.</b> Last fighter standing menang.</li>
+      </ul>
+    </div>
+    <p class="foot">Base Mini App · Android-ready · No transactions, no signing — your wallet is just your identity.</p>
+  </section>
+
+  <!-- Login modal (pop-up pilihan login, muncul di atas splash/dashboard) -->
+  <div id="loginModal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Log In">
+    <div id="loginModalBackdrop" class="modal-backdrop"></div>
+    <div class="modal-card">
+      <button id="loginModalClose" class="modal-close" type="button" aria-label="Tutup">×</button>
+      <h1>Log In</h1>
+      <p class="tagline">Login pakai wallet Base atau email. Tanpa transaksi atau signing — pilih salah satu untuk mulai main.</p>
+      <button id="loginConnectBtn" class="btn btn-primary btn-big wallet-btn" type="button">Connect Wallet</button>
+      <p id="walletStatus" class="wallet-status">Wallet not connected — play as a guest, or connect to track your score on Base.</p>
+      <p id="loginMsg" class="login-msg" aria-live="polite"></p>
+      <div class="divider">— atau login dengan email —</div>
+      <form id="loginEmailForm" class="email-form">
+        <input id="loginEmailInput" type="email" inputmode="email" autocomplete="email" placeholder="email@contoh.com" aria-label="Email" required>
+        <button id="loginEmailBtn" class="btn btn-primary" type="submit">Login dengan Email</button>
+      </form>
+      <p class="login-note">Email disimpan di perangkat ini — belum ada verifikasi kode.</p>
+      <div class="divider">— atau —</div>
+      <button id="loginGuestBtn" class="btn" type="button">Main sebagai Guest</button>
+      <p class="login-note">Guest bisa langsung main, tapi skor &amp; token tidak terikat ke wallet.</p>
+      <div class="modal-install">
+        <h2>Belum ada wallet?</h2>
+        <p>Install dulu salah satu:
+          <a href="https://metamask.io/download/" target="_blank" rel="noopener">MetaMask</a> ·
+          <a href="https://www.coinbase.com/wallet/downloads" target="_blank" rel="noopener">Coinbase Wallet</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game view (arena, tidak diubah) -->
+  <section id="game" class="view game" hidden aria-label="Base Bomber game">
+    <div class="hud">
+      <span>❤️ <b id="hudLives">3</b></span>
+      <span>⭐ <b id="hudScore">0</b></span>
+      <span>🪙 <b id="hudTokens">0</b></span>
+      <span>⏱ <b id="hudTime">0:00</b></span>
+      <span>Level <b id="hudLevel">1</b></span>
+      <span id="hudWallpass" hidden>👻 12s</span>
+      <span id="hudSudden" hidden>⚠️ SUDDEN DEATH</span>
+    </div>
+
+    <div class="strategy" role="group" aria-label="Fighter strategy">
+      <span class="strategy-label">Strategi:</span>
+      <button class="btn strat-btn active" type="button" data-strategy="balanced">Balanced</button>
+      <button class="btn strat-btn" type="button" data-strategy="aggressive">Aggressive</button>
+      <button class="btn strat-btn" type="button" data-strategy="greedy">Greedy</button>
+      <button class="btn strat-btn" type="button" data-strategy="defensive">Defensive</button>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="gameCanvas" width="608" height="480"></canvas>
+      <div id="overlay" class="overlay" hidden>
+        <div id="overlayTitle" class="overlay-title"></div>
+        <div id="overlayText" class="overlay-text"></div>
+        <button id="overlayBtn" class="btn btn-primary" type="button">Next</button>
+      <button id="overlayBtn2" class="btn" type="button" hidden>↻ Main Lagi</button>
+      </div>
+    </div>
+
+    <div id="msg" class="msg" aria-live="polite"></div>
+
+    <div class="game-actions">
+      <button id="pauseBtn" class="btn" type="button">⏸ Pause</button>
+      <button id="restartBtn" class="btn" type="button">↻ Restart</button>
+      <button id="menuBtn" class="btn" type="button">🏠 Menu</button>
+    </div>
+
+    <p class="hint">Auto-battler: fighter jalan + pasang bom sendiri · P to pause</p>
+  </section>
+
+  <!-- Leaderboard (placeholder, on-chain menyusul) -->
+  <section id="view-leaderboard" class="view" hidden aria-label="Leaderboard">
+    <h1>🏆 Leaderboard</h1>
+    <p class="tagline">Skor terbaik para pemain Base Bomber.</p>
+    <div class="card">
+      <table class="board">
+        <thead>
+          <tr><th>#</th><th>Player</th><th>Score</th><th>Token</th></tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="4" class="board-empty">Belum ada data — leaderboard on-chain menyusul.</td></tr>
+        </tbody>
+      </table>
+      <p class="board-note">Skor lokalmu tersimpan di perangkat ini (lihat Profile).</p>
+    </div>
+  </section>
+
+  <!-- Profile -->
+  <section id="view-profile" class="view" hidden aria-label="Profile">
+    <h1>👤 Profile</h1>
+    <div class="card">
+      <div class="player-label">Wallet</div>
+      <div id="profileAddr" class="player-title">Belum login</div>
+      <p id="profileStats" class="player-stats">Login dulu untuk melihat profil &amp; statistikmu.</p>
+      <div class="profile-actions">
+        <button id="profileLoginBtn" class="btn btn-primary" type="button">Log In</button>
+        <button id="profileLogoutBtn" class="btn" type="button" hidden>Log Out</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="game.js"></script>
+<script src="wallet.js"></script>
+</body>
+</html>
