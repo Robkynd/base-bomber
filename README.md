@@ -110,3 +110,5 @@ shows a friendly message and the game still plays as guest.
 node tests/nav-smoke-test.js   # 54 checks: views, splash, login modal, wallet/email/guest
 node tests/pacing-test.js      # 5 simulated matches must finish with a winner
 ```
+
+<!-- Deployed via GitHub Pages from main. -->
