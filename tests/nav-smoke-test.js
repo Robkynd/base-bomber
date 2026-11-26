@@ -262,13 +262,19 @@ function navActive(name) {
   // Play saat sudah login -> langsung main
   api.requestPlay();
   check('Play saat login -> langsung game', api.getCurrentView() === 'game' && api.state.screen === 'playing');
-  // Stats tersimpan setelah startLevel
+  // Stats tersimpan setelah startLevel (save per-identitas wallet)
   check('stats level >= 1 setelah main', api.getStats().level >= 1);
-  check('stats tersimpan di localStorage', LS.getItem('bombchain.stats') !== null);
+  check('stats tersimpan di localStorage', LS.getItem('bombchain.save.wallet:' + MOCK_ADDR.toLowerCase()) !== null);
   // Profile tampil alamat + statistik
   api.showView('profile');
   check('profile tampil alamat lengkap', byId.profileAddr.textContent === MOCK_ADDR);
   check('profile tampil statistik', byId.profileStats.textContent.indexOf('Token') >= 0);
+  // Save per-identitas: wallet dan guest punya key sendiri-sendiri
+  check('save wallet terpisah dari guest',
+    LS.getItem('bombchain.save.wallet:' + MOCK_ADDR.toLowerCase()) !== null &&
+    LS.getItem('bombchain.save.guest') !== null);
+  check('status save wallet tanpa Supabase = perangkat (cloud belum setup)',
+    api.getSaveStatus().indexOf('Perangkat') >= 0);
 
   console.log('== Fase D: reload (persistensi) + tanpa wallet ==');
   // Simulasi reload: DOM baru, localStorage sama, TANPA ethereum
