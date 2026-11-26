@@ -95,8 +95,14 @@
   var WALLET_KEY = 'bombchain.wallet';
   var GUEST_KEY = 'bombchain.guest';
   var EMAIL_KEY = 'bombchain.email';
-  var STATS_KEY = 'bombchain.stats';
-  var stats = { tokens: 0, score: 0, level: 0, played: false }; // best local stats, persisted
+  var STATS_KEY = 'bombchain.stats'; // legacy (global best) — dimigrasi ke save per-identitas
+  var stats = { tokens: 0, score: 0, level: 0, played: false, matches: 0, strategy: 'balanced' }; // best local stats, persisted
+
+  /* Cloud save (Supabase, opsional) — config di save-config.js
+     (window.BASEBOMBER_SAVE_CONFIG). Kosong = cloud off, game jalan penuh lokal.
+     Lihat SAVE_SETUP.md. */
+  var SAVE_CONFIG = (typeof window !== 'undefined' && window.BASEBOMBER_SAVE_CONFIG) || {};
+  var cloudSaveState = 'off'; // 'off' | 'local' | 'syncing' | 'cloud' | 'error'
 
   /* ================= DOM ================= */
   var canvas, ctx;
@@ -152,8 +158,9 @@
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('bombchain:wallet', onWalletEvent);
     }
+    restoreLogin(); // dulu: identitas harus ketahuan sebelum load save per-identitas
     loadStats();
-    restoreLogin();
+    if (state.walletAddress) loadSaveFromCloud();
     showView('splash');
     renderDashboard();
     renderProfile();
@@ -1817,10 +1824,14 @@
   function onWalletEvent(e) {
     var d = (e && e.detail) || {};
     if (d.address) {
+      state.screen = 'menu'; // ganti identitas = run saat ini berakhir
+      saveStats(); // simpan progres identitas lama sebelum ganti ke wallet ini
       state.walletAddress = d.address;
       state.guest = false;
       state.email = null;
       persistLogin();
+      loadStats(); // save milik wallet ini (lokal) …
+      loadSaveFromCloud(); // … lalu gabung dengan save cloud kalau ada
       if (isLoginModalOpen()) {
         if (els.loginMsg) { els.loginMsg.style.color = ''; els.loginMsg.textContent = 'Login berhasil! ✓'; }
         var go = pendingPlay ? 'play' : (pendingView || 'dashboard');
@@ -1836,18 +1847,24 @@
       }
     } else if (state.walletAddress) {
       // Wallet disconnected.
+      state.screen = 'menu'; // run saat ini berakhir
+      saveStats();
       state.walletAddress = null;
       persistLogin();
+      loadStats(); // kembali ke save guest
       renderDashboard();
       renderProfile();
     }
   }
 
   function loginGuest() {
+    state.screen = 'menu'; // ganti identitas = run saat ini berakhir
+    saveStats(); // simpan progres identitas lama sebelum ganti ke guest
     state.guest = true;
     state.walletAddress = null;
     state.email = null;
     persistLogin();
+    loadStats();
     if (els.loginMsg) { els.loginMsg.style.color = ''; els.loginMsg.textContent = 'Mode guest aktif — selamat bermain!'; }
     var go = pendingPlay ? 'play' : (pendingView || 'dashboard');
     pendingPlay = false; pendingView = null;
@@ -1868,10 +1885,13 @@
       if (els.loginMsg) { els.loginMsg.style.color = '#f87171'; els.loginMsg.textContent = 'Masukkan email yang valid.'; }
       return;
     }
+    saveStats(); // simpan progres identitas lama sebelum ganti ke email ini
+    state.screen = 'menu'; // ganti identitas = run saat ini berakhir
     state.email = email;
     state.walletAddress = null;
     state.guest = false;
     persistLogin();
+    loadStats();
     if (els.loginMsg) { els.loginMsg.style.color = ''; els.loginMsg.textContent = 'Login email aktif — selamat bermain!'; }
     var go = pendingPlay ? 'play' : (pendingView || 'dashboard');
     pendingPlay = false; pendingView = null;
@@ -1883,10 +1903,13 @@
   }
 
   function logout() {
+    state.screen = 'menu'; // run saat ini berakhir
+    saveStats(); // simpan progres sebelum logout
     state.walletAddress = null;
     state.guest = false;
     state.email = null;
     persistLogin();
+    loadStats(); // kembali ke save guest
     if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
       var btns = document.querySelectorAll('.wallet-btn');
       for (var i = 0; i < btns.length; i++) {
@@ -1899,28 +1922,138 @@
     showView('dashboard');
   }
 
-  /* ================= Local stats ================= */
+  /* ================= Save system (lokal + cloud) ================= */
+  /* Save per-identitas: wallet:<address> / email:<email> / guest.
+     Lokal selalu aktif; cloud (Supabase) aktif kalau save-config.js diisi. */
+  function getSaveId() {
+    if (state.walletAddress) return 'wallet:' + String(state.walletAddress).toLowerCase();
+    if (state.email) return 'email:' + String(state.email).toLowerCase();
+    return 'guest';
+  }
+
+  function getSaveKey() {
+    return 'bombchain.save.' + getSaveId();
+  }
+
+  function cloudConfigured() {
+    return !!(SAVE_CONFIG.supabaseUrl && SAVE_CONFIG.supabaseAnonKey);
+  }
+
+  function cloudHeaders() {
+    return {
+      'apikey': SAVE_CONFIG.supabaseAnonKey,
+      'Authorization': 'Bearer ' + SAVE_CONFIG.supabaseAnonKey,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  /* Upsert save lokal ke Supabase (hanya untuk wallet). Non-blocking dan
+     gagal diam-diam — save lokal tetap jadi sumber kebenaran. */
+  function syncSaveToCloud() {
+    if (!cloudConfigured() || !state.walletAddress) return;
+    if (typeof fetch !== 'function') return;
+    var addr = String(state.walletAddress).toLowerCase();
+    var row = {
+      wallet_address: addr,
+      tokens: stats.tokens || 0,
+      score: stats.score || 0,
+      level: stats.level || 0,
+      matches: stats.matches || 0,
+      strategy: stats.strategy || playerStrategy || 'balanced',
+      updated_at: new Date().toISOString(),
+    };
+    cloudSaveState = 'syncing';
+    fetch(SAVE_CONFIG.supabaseUrl + '/rest/v1/player_saves', {
+      method: 'POST',
+      headers: Object.assign(cloudHeaders(), { 'Prefer': 'resolution=merge-duplicates' }),
+      body: JSON.stringify(row),
+    }).then(function (res) {
+      cloudSaveState = res.ok ? 'cloud' : 'error';
+      renderProfile();
+    }).catch(function () {
+      cloudSaveState = 'error';
+      renderProfile();
+    });
+  }
+
+  /* Ambil save cloud untuk wallet ini, gabung dengan lokal (nilai terbesar
+     per field menang). Dipanggil tiap login wallet. */
+  function loadSaveFromCloud() {
+    if (!cloudConfigured() || !state.walletAddress) return;
+    if (typeof fetch !== 'function') return;
+    var addr = String(state.walletAddress).toLowerCase();
+    var url = SAVE_CONFIG.supabaseUrl + '/rest/v1/player_saves?wallet_address=eq.' +
+      encodeURIComponent(addr) + '&select=tokens,score,level,matches,strategy';
+    fetch(url, { headers: cloudHeaders() })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (rows) {
+        if (!rows || !rows.length) { cloudSaveState = 'cloud'; renderProfile(); return; }
+        var c = rows[0];
+        var changed = false;
+        if ((c.tokens || 0) > (stats.tokens || 0)) { stats.tokens = c.tokens; changed = true; }
+        if ((c.score || 0) > (stats.score || 0)) { stats.score = c.score; changed = true; }
+        if ((c.level || 0) > (stats.level || 0)) { stats.level = c.level; changed = true; }
+        if ((c.matches || 0) > (stats.matches || 0)) { stats.matches = c.matches; changed = true; }
+        if (c.strategy && !stats.strategy) { stats.strategy = c.strategy; changed = true; }
+        if (changed) { stats.played = true; saveStats(); }
+        cloudSaveState = 'cloud';
+        renderProfile(); renderDashboard();
+      })
+      .catch(function () { cloudSaveState = 'error'; renderProfile(); });
+  }
+
+  function getSaveStatus() {
+    if (!state.walletAddress) return '💾 Perangkat';
+    if (!cloudConfigured()) return '💾 Perangkat (cloud belum di-setup)';
+    if (cloudSaveState === 'cloud') return '☁️ Cloud ✓';
+    if (cloudSaveState === 'syncing') return '☁️ Cloud (sync…)';
+    if (cloudSaveState === 'error') return '☁️ Cloud (belum sync)';
+    return '☁️ Cloud (menunggu sync)';
+  }
+
   function saveStats() {
     try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(getSaveKey(), JSON.stringify(stats));
+      }
     } catch (e) {}
+    syncSaveToCloud();
   }
 
   function loadStats() {
+    /* Reset ke default dulu supaya ganti identitas tidak membawa stats lama. */
+    stats = { tokens: 0, score: 0, level: 0, played: false, matches: 0, strategy: 'balanced' };
     try {
       if (typeof localStorage === 'undefined') return;
-      var raw = localStorage.getItem(STATS_KEY);
+      var raw = localStorage.getItem(getSaveKey());
+      if (!raw) {
+        /* Migrasi sekali dari save global lama (bombchain.stats). */
+        raw = localStorage.getItem(STATS_KEY);
+        if (raw) localStorage.removeItem(STATS_KEY);
+      }
       if (raw) {
         var p = JSON.parse(raw);
-        if (p && typeof p === 'object') stats = p;
+        if (p && typeof p === 'object') {
+          if (typeof p.tokens === 'number') stats.tokens = p.tokens;
+          if (typeof p.score === 'number') stats.score = p.score;
+          if (typeof p.level === 'number') stats.level = p.level;
+          if (typeof p.matches === 'number') stats.matches = p.matches;
+          if (typeof p.strategy === 'string') stats.strategy = p.strategy;
+          if (p.played) stats.played = true;
+        }
       }
     } catch (e) {}
+    if (cloudConfigured() && state.walletAddress) cloudSaveState = 'local';
+    else if (!state.walletAddress) cloudSaveState = 'off';
+    else cloudSaveState = 'off';
   }
 
   function recordStats() {
     if (state.tokens > stats.tokens) stats.tokens = state.tokens;
     if (state.score > stats.score) stats.score = state.score;
     if (state.level > stats.level) stats.level = state.level;
+    stats.matches = (stats.matches || 0) + 1;
+    stats.strategy = playerStrategy || stats.strategy || 'balanced';
     stats.played = true;
     saveStats();
   }
@@ -1959,7 +2092,7 @@
     }
     if (els.profileStats) {
       els.profileStats.textContent = isLoggedIn()
-        ? '🪙 Token ' + s.tokens + ' · ⭐ Score ' + s.score + ' · Level ' + s.level + ' · Strategi: ' + playerStrategy
+        ? '🪙 Token ' + s.tokens + ' · ⭐ Score ' + s.score + ' · Level ' + s.level + ' · Strategi: ' + playerStrategy + ' · ' + getSaveStatus()
         : 'Login dulu untuk melihat profil & statistikmu.';
     }
     if (els.profileLoginBtn) els.profileLoginBtn.hidden = isLoggedIn();
@@ -1985,7 +2118,7 @@
     newGame: newGame, startLevel: startLevel, startGame: startGame,
     showView: showView, requestPlay: requestPlay,
     isLoggedIn: isLoggedIn, getWalletAddress: getWalletAddress,
-    getStats: getStats, loginGuest: loginGuest, loginEmail: loginEmail, logout: logout,
+    getStats: getStats, getSaveStatus: getSaveStatus, loginGuest: loginGuest, loginEmail: loginEmail, logout: logout,
     openLoginModal: openLoginModal, closeLoginModal: closeLoginModal,
     cancelLogin: cancelLogin, isLoginModalOpen: isLoginModalOpen,
     getCurrentView: function () { return currentView; },
